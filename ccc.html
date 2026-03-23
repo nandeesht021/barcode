@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NutriScan — Barcode Health Analyzer</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0c10;
+            --surface: #10141c;
+            --border: #1e2530;
+            --text: #e8eaf0;
+            --muted: #5a6070;
+            --accent: #00e5a0;
+            --safe-bg: #0d1f16;
+            --safe-border: #00e5a0;
+            --safe-glow: rgba(0, 229, 160, 0.25);
+            --safe-text: #00e5a0;
+            --warn-bg: #1f1600;
+            --warn-border: #f5a623;
+            --warn-glow: rgba(245, 166, 35, 0.25);
+            --warn-text: #f5a623;
+            --danger-bg: #1f0608;
+            --danger-border: #e5002e;
+            --danger-glow: rgba(229, 0, 46, 0.30);
+            --danger-text: #ff4466;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Syne', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 229, 160, 0.015) 2px, rgba(0, 229, 160, 0.015) 4px);
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0, 229, 160, 0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 229, 160, 0.04) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 40px 20px 80px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        h1 {
+            font-size: clamp(2rem, 6vw, 3.2rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1;
+        }
+
+        h1 span {
+            color: var(--accent);
+        }
+
+        .tagline {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-top: 10px;
+        }
+
+        .scanner-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 24px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .scanner-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0.6;
+        }
+
+        .section-label {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.65rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 18px;
+        }
+
+        .camera-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #05080d;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .camera-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .scan-frame {
+            width: 220px;
+            height: 100px;
+            position: relative;
+        }
+
+        .scan-frame::before,
+        .scan-frame::after,
+        .scan-frame .corner-br,
+        .scan-frame .corner-bl {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border-color: var(--accent);
+            border-style: solid;
+        }
+
+        .scan-frame::before {
+            top: 0;
+            left: 0;
+            border-width: 2px 0 0 2px;
+        }
+
+        .scan-frame::after {
+            top: 0;
+            right: 0;
+            border-width: 2px 2px 0 0;
+        }
+
+        .scan-frame .corner-br {
+            bottom: 0;
+            right: 0;
+            border-width: 0 2px 2px 0;
+        }
+
+        .scan-frame .corner-bl {
+            bottom: 0;
+            left: 0;
+            border-width: 0 0 2px 2px;
+        }
+
+        .scan-line {
+            position: absolute;
+            left: 4px;
+            right: 4px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            box-shadow: 0 0 8px var(--accent);
+            animation: scanline 2s ease-in-out infinite;
+            top: 10px;
+        }
+
+        @keyframes scanline {
+
+            0%,
+            100% {
+                top: 10px;
+                opacity: 1;
+            }
+
+            50% {
+                top: 80px;
+                opacity: 0.7;
+            }
+        }
+
+        .camera-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            color: var(--muted);
+            font-family: 'Space Mono', monospace;
+            font-size: 0.75rem;
+        }
+
+        .camera-placeholder svg {
+            opacity: 0.3;
+        }
+
+        .camera-wrapper.active .camera-placeholder {
+            display: none;
+        }
+
+        #canvas {
+            display: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            flex: 1;
+            min-width: 130px;
+            padding: 14px 20px;
+            border-radius: 10px;
+            font-family: 'Syne', sans-serif;
+            font-size: 0.88rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #05080d;
+        }
+
+        .btn-primary:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin: 24px 0;
+            color: var(--muted);
+            font-family: 'Space Mono', monospace;
+            font-size: 0.65rem;
+            letter-spacing: 0.15em;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .barcode-input {
+            flex: 1;
+            background: #05080d;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 18px;
+            color: var(--text);
+            font-family: 'Space Mono', monospace;
+            font-size: 0.88rem;
+            letter-spacing: 0.08em;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .barcode-input:focus {
+            border-color: var(--accent);
+        }
+
+        .barcode-input::placeholder {
+            color: var(--muted);
+        }
+
+        .result-card {
+            border-radius: 16px;
+            padding: 32px;
+            display: none;
+            position: relative;
+            overflow: hidden;
+            animation: slideUp 0.4s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result-card.safe {
+            background: var(--safe-bg);
+            border: 1px solid var(--safe-border);
+            box-shadow: 0 0 40px var(--safe-glow), inset 0 0 60px rgba(0, 229, 160, 0.05);
+        }
+
+        .result-card.warn {
+            background: var(--warn-bg);
+            border: 1px solid var(--warn-border);
+            box-shadow: 0 0 40px var(--warn-glow), inset 0 0 60px rgba(245, 166, 35, 0.05);
+        }
+
+        .result-card.danger {
+            background: var(--danger-bg);
+            border: 1px solid var(--danger-border);
+            box-shadow: 0 0 40px var(--danger-glow), inset 0 0 60px rgba(229, 0, 46, 0.05);
+        }
+
+        .result-card::after {
+            content: '';
+            position: absolute;
+            top: -60px;
+            right: -60px;
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            filter: blur(60px);
+            opacity: 0.2;
+            pointer-events: none;
+        }
+
+        .result-card.safe::after {
+            background: var(--safe-border);
+        }
+
+        .result-card.warn::after {
+            background: var(--warn-border);
+        }
+
+        .result-card.danger::after {
+            background: var(--danger-border);
+        }
+
+        .result-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 28px;
+            gap: 16px;
+        }
+
+        .product-info {
+            flex: 1;
+        }
+
+        .product-name {
+            font-size: 1.4rem;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-bottom: 6px;
+        }
+
+        .product-barcode {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.7rem;
+            letter-spacing: 0.12em;
+            color: var(--muted);
+        }
+
+        .score-badge {
+            flex-shrink: 0;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .score-badge svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+        }
+
+        .score-ring {
+            fill: none;
+            stroke-width: 4;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .score-track {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.06);
+            stroke-width: 4;
+        }
+
+        .score-number {
+            font-size: 1.5rem;
+            font-weight: 800;
+            line-height: 1;
+            position: relative;
+            z-index: 1;
+        }
+
+        .score-label {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.5rem;
+            letter-spacing: 0.1em;
+            position: relative;
+            z-index: 1;
+            opacity: 0.7;
+        }
+
+        .safe .score-number {
+            color: var(--safe-text);
+        }
+
+        .warn .score-number {
+            color: var(--warn-text);
+        }
+
+        .danger .score-number {
+            color: var(--danger-text);
+        }
+
+        .safe .score-ring {
+            stroke: var(--safe-border);
+        }
+
+        .warn .score-ring {
+            stroke: var(--warn-border);
+        }
+
+        .danger .score-ring {
+            stroke: var(--danger-border);
+        }
+
+        .verdict {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            font-weight: 600;
+            font-size: 0.88rem;
+        }
+
+        .safe .verdict {
+            background: rgba(0, 229, 160, 0.1);
+            color: var(--safe-text);
+        }
+
+        .warn .verdict {
+            background: rgba(245, 166, 35, 0.1);
+            color: var(--warn-text);
+        }
+
+        .danger .verdict {
+            background: rgba(229, 0, 46, 0.12);
+            color: var(--danger-text);
+        }
+
+        .verdict-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            animation: pulseGlow 2s ease infinite;
+        }
+
+        .safe .verdict-dot {
+            background: var(--safe-text);
+        }
+
+        .warn .verdict-dot {
+            background: var(--warn-text);
+        }
+
+        .danger .verdict-dot {
+            background: var(--danger-text);
+        }
+
+        @keyframes pulseGlow {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(1.4);
+            }
+        }
+
+        .nutrients-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .nutrient-chip {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+
+        .nutrient-label {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.6rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+
+        .nutrient-value {
+            font-size: 1.05rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .nutrient-unit {
+            font-size: 0.62rem;
+            font-weight: 400;
+            opacity: 0.5;
+            margin-left: 2px;
+        }
+
+        .flags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .flag {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.63rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .flag-good {
+            background: rgba(0, 229, 160, 0.1);
+            color: #00e5a0;
+            border: 1px solid rgba(0, 229, 160, 0.2);
+        }
+
+        .flag-warn {
+            background: rgba(245, 166, 35, 0.1);
+            color: #f5a623;
+            border: 1px solid rgba(245, 166, 35, 0.2);
+        }
+
+        .flag-bad {
+            background: rgba(229, 0, 46, 0.1);
+            color: #ff4466;
+            border: 1px solid rgba(229, 0, 46, 0.2);
+        }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(5, 8, 13, 0.85);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 16px;
+            backdrop-filter: blur(4px);
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loading-text {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.75rem;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+            animation: blink 1s ease infinite;
+        }
+
+        @keyframes blink {
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #1e2530;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text);
+            z-index: 200;
+            transition: transform 0.3s ease;
+            white-space: nowrap;
+            max-width: 90vw;
+            text-align: center;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .demo-barcodes {
+            margin-top: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .demo-chip {
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--muted);
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.05em;
+        }
+
+        .demo-chip:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        @media (max-width: 480px) {
+
+            .scanner-card,
+            .result-card {
+                padding: 20px;
+            }
+
+            .result-header {
+                flex-direction: column-reverse;
+            }
+
+            .score-badge {
+                margin: 0 auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text">ANALYZING PRODUCT...</div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="container">
+
+        <header>
+            <h1>Nutri<span>Scan</span></h1>
+            <p class="tagline">// Barcode Health Intelligence System</p>
+        </header>
+
+        <div class="scanner-card">
+            <div class="section-label">// Camera Scanner</div>
+
+            <div class="camera-wrapper" id="cameraWrapper">
+                <video id="video" playsinline autoplay muted></video>
+                <canvas id="canvas"></canvas>
+                <div class="camera-overlay">
+                    <div class="scan-frame">
+                        <div class="scan-line"></div>
+                        <div class="corner-br"></div>
+                        <div class="corner-bl"></div>
+                    </div>
+                </div>
+                <div class="camera-placeholder" id="cameraPlaceholder">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                        <rect x="2" y="10" width="36" height="26" rx="4" stroke="#5a6070" stroke-width="2" />
+                        <circle cx="20" cy="23" r="7" stroke="#5a6070" stroke-width="2" />
+                        <path d="M14 10V8a2 2 0 012-2h8a2 2 0 012 2v2" stroke="#5a6070" stroke-width="2" />
+                    </svg>
+                    <span>Camera inactive — tap Start to scan</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="btn btn-primary" id="startCameraBtn" onclick="startCamera()">▶ Start Camera</button>
+                <button class="btn btn-secondary" id="stopCameraBtn" onclick="stopCamera()" disabled>■ Stop</button>
+            </div>
+
+            <div class="divider">OR ENTER BARCODE MANUALLY</div>
+
+            <div class="input-group">
+                <input type="text" class="barcode-input" id="barcodeInput" placeholder="e.g. 737628064502"
+                    maxlength="14" oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
+                <button class="btn btn-primary" style="flex: 0; min-width: 110px;"
+                    onclick="analyzeManual()">Analyze</button>
+            </div>
+
+            <div class="section-label" style="margin-top: 20px; margin-bottom: 10px;">// Try Demo Barcodes</div>
+            <div class="demo-barcodes" id="demoChips"></div>
+        </div>
+
+        <div class="result-card" id="resultCard">
+            <div class="result-header">
+                <div class="product-info">
+                    <div class="product-name" id="productName">—</div>
+                    <div class="product-barcode" id="productBarcode">BARCODE: —</div>
+                </div>
+                <div class="score-badge" id="scoreBadge">
+                    <svg viewBox="0 0 80 80">
+                        <circle class="score-track" cx="40" cy="40" r="34" />
+                        <circle class="score-ring" id="scoreRing" cx="40" cy="40" r="34" stroke-dasharray="213.6"
+                            stroke-dashoffset="213.6" />
+                    </svg>
+                    <div class="score-number" id="scoreNumber">—</div>
+                    <div class="score-label">/ 10</div>
+                </div>
+            </div>
+
+            <div class="verdict" id="verdict">
+                <div class="verdict-dot"></div>
+                <span id="verdictText">—</span>
+            </div>
+
+            <div class="section-label" style="margin-bottom:12px;">// Nutritional Breakdown (per 100g)</div>
+            <div class="nutrients-grid" id="nutrientsGrid"></div>
+
+            <div class="section-label" style="margin-bottom:12px;">// Health Flags</div>
+            <div class="flags" id="flagsContainer"></div>
+        </div>
+
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.20.0/index.min.js"></script>
+    <script>
+        /* ── Product Database ── */
+        const PRODUCT_DB = {
+            "737628064502": {
+                name: "Lay's Classic Chips",
+                nutrients: { calories: 536, fat: 35, sugar: 1, sodium: 570, protein: 7, fiber: 4 },
+                additives: ["artificial flavors", "MSG", "disodium inosinate"],
+                organic: false, vegan: true, gluten_free: false
+            },
+            "049000042566": {
+                name: "Coca-Cola Classic",
+                nutrients: { calories: 180, fat: 0, sugar: 39, sodium: 45, protein: 0, fiber: 0 },
+                additives: ["phosphoric acid", "caramel color E150d", "caffeine"],
+                organic: false, vegan: true, gluten_free: true
+            },
+            "085239035504": {
+                name: "Natural Almond Butter",
+                nutrients: { calories: 614, fat: 56, sugar: 4, sodium: 0, protein: 21, fiber: 10 },
+                additives: [],
+                organic: true, vegan: true, gluten_free: true
+            },
+            "044000030643": {
+                name: "Oreo Sandwich Cookies",
+                nutrients: { calories: 480, fat: 20, sugar: 46, sodium: 400, protein: 5, fiber: 2 },
+                additives: ["HFCS", "artificial flavor", "soy lecithin", "BHT"],
+                organic: false, vegan: false, gluten_free: false
+            },
+            "016000275287": {
+                name: "Cheerios Oat Cereal",
+                nutrients: { calories: 370, fat: 7, sugar: 5, sodium: 480, protein: 12, fiber: 10 },
+                additives: ["vitamin D", "iron", "tocopherols"],
+                organic: false, vegan: true, gluten_free: true
+            },
+            "021130126026": {
+                name: "Greek Yogurt (Plain)",
+                nutrients: { calories: 100, fat: 0, sugar: 4, sodium: 55, protein: 18, fiber: 0 },
+                additives: [],
+                organic: false, vegan: false, gluten_free: true
+            },
+            "011110038364": {
+                name: "Whole Rolled Oats",
+                nutrients: { calories: 389, fat: 7, sugar: 1, sodium: 2, protein: 17, fiber: 11 },
+                additives: [],
+                organic: true, vegan: true, gluten_free: false
+            },
+            "4006381333931": {
+                name: "Haribo Gold-Bears",
+                nutrients: { calories: 343, fat: 0, sugar: 46, sodium: 55, protein: 7, fiber: 0 },
+                additives: ["artificial colors", "gelatin", "citric acid", "E330"],
+                organic: false, vegan: false, gluten_free: true
+            },
+            "038000845024": {
+                name: "Kellogg's Frosted Flakes",
+                nutrients: { calories: 380, fat: 0, sugar: 37, sodium: 440, protein: 6, fiber: 1 },
+                additives: ["BHT", "artificial color", "niacinamide"],
+                organic: false, vegan: false, gluten_free: false
+            },
+            "012000161155": {
+                name: "Pepsi Cola",
+                nutrients: { calories: 170, fat: 0, sugar: 41, sodium: 30, protein: 0, fiber: 0 },
+                additives: ["phosphoric acid", "caramel color", "caffeine", "citric acid"],
+                organic: false, vegan: true, gluten_free: true
+            },
+        };
+
+        const DEMO_LABELS = {
+            "737628064502": "Chips",
+            "049000042566": "Coca-Cola",
+            "085239035504": "Almond Butter",
+            "044000030643": "Oreos",
+            "016000275287": "Cheerios",
+            "021130126026": "Greek Yogurt",
+            "011110038364": "Rolled Oats",
+            "4006381333931": "Haribo",
+        };
+
+        // Render demo chips
+        const demoEl = document.getElementById('demoChips');
+        Object.entries(DEMO_LABELS).forEach(([code, label]) => {
+            const chip = document.createElement('div');
+            chip.className = 'demo-chip';
+            chip.innerHTML = `${label} <span style="opacity:0.5">${code.slice(-4)}</span>`;
+            chip.onclick = () => {
+                document.getElementById('barcodeInput').value = code;
+                analyzeManual();
+            };
+            demoEl.appendChild(chip);
+        });
+
+        /* ── Scoring ── */
+        function calculateScore(product) {
+            let score = 10;
+            const { calories, fat, sugar, sodium, protein, fiber } = product.nutrients;
+
+            if (sugar > 35) score -= 3.5;
+            else if (sugar > 20) score -= 2.5;
+            else if (sugar > 10) score -= 1.5;
+            else if (sugar > 5) score -= 0.5;
+
+            if (sodium > 600) score -= 2.5;
+            else if (sodium > 400) score -= 1.5;
+            else if (sodium > 200) score -= 0.8;
+
+            if (fat > 40) score -= 0.5;
+
+            if (protein >= 15) score += 1.5;
+            else if (protein >= 8) score += 1;
+            else if (protein >= 4) score += 0.5;
+
+            if (fiber >= 8) score += 1.5;
+            else if (fiber >= 4) score += 1;
+            else if (fiber >= 2) score += 0.5;
+
+            const HARMFUL = ["MSG", "HFCS", "BHT", "BHA", "E150d", "phosphoric acid", "artificial color", "artificial flavors", "E330", "citric acid"];
+            const harmful = product.additives.filter(a =>
+                HARMFUL.some(h => a.toLowerCase().includes(h.toLowerCase()))
+            );
+            score -= harmful.length * 0.4;
+
+            if (product.organic) score += 0.5;
+            if (product.additives.length === 0) score += 0.5;
+
+            return Math.max(0, Math.min(10, Math.round(score * 10) / 10));
+        }
+
+        function generateFlags(product) {
+            const flags = [];
+            const { sugar, sodium, fat, protein, fiber } = product.nutrients;
+
+            if (sugar > 30) flags.push({ label: '⚠ Very High Sugar', type: 'bad' });
+            else if (sugar > 15) flags.push({ label: '⚠ High Sugar', type: 'warn' });
+            else if (sugar <= 3) flags.push({ label: '✓ Low Sugar', type: 'good' });
+
+            if (sodium > 500) flags.push({ label: '⚠ Very High Sodium', type: 'bad' });
+            else if (sodium > 300) flags.push({ label: '⚠ High Sodium', type: 'warn' });
+
+            if (protein >= 15) flags.push({ label: '✓ High Protein', type: 'good' });
+            else if (protein >= 8) flags.push({ label: '✓ Good Protein', type: 'good' });
+
+            if (fiber >= 8) flags.push({ label: '✓ High Fiber', type: 'good' });
+            else if (fiber >= 4) flags.push({ label: '✓ Good Fiber', type: 'good' });
+            else if (fiber < 2) flags.push({ label: '⚠ Low Fiber', type: 'warn' });
+
+            if (product.organic) flags.push({ label: '✓ Organic', type: 'good' });
+            if (product.vegan) flags.push({ label: '✓ Vegan', type: 'good' });
+            if (product.gluten_free) flags.push({ label: '✓ Gluten-Free', type: 'good' });
+
+            const HARMFUL = ["MSG", "HFCS", "BHT", "BHA", "E150d", "phosphoric acid", "artificial color", "artificial flavors"];
+            const bad = product.additives.filter(a =>
+                HARMFUL.some(h => a.toLowerCase().includes(h.toLowerCase()))
+            );
+            if (bad.length > 0) flags.push({ label: `⚠ ${bad.length} Harmful Additive${bad.length > 1 ? 's' : ''}`, type: 'bad' });
+            else if (product.additives.length === 0) flags.push({ label: '✓ No Additives', type: 'good' });
+
+            return flags;
+        }
+
+        /* ── Render ── */
+        function renderResult(barcode, product) {
+            const score = calculateScore(product);
+            const card = document.getElementById('resultCard');
+
+            card.className = 'result-card';
+            let theme, verdictMsg;
+            if (score >= 8) {
+                theme = 'safe';
+                verdictMsg = `Score ${score}/10 — Excellent! This product is healthy and safe for regular consumption.`;
+            } else if (score >= 5) {
+                theme = 'warn';
+                verdictMsg = `Score ${score}/10 — Moderate. Best enjoyed occasionally and in controlled portions.`;
+            } else {
+                theme = 'danger';
+                verdictMsg = `Score ${score}/10 — Caution! High levels of unhealthy ingredients detected. Avoid or limit strictly.`;
+            }
+            card.classList.add(theme);
+
+            document.getElementById('productName').textContent = product.name;
+            document.getElementById('productBarcode').textContent = `BARCODE: ${barcode}`;
+            document.getElementById('scoreNumber').textContent = score;
+            document.getElementById('verdictText').textContent = verdictMsg;
+
+            const ring = document.getElementById('scoreRing');
+            ring.style.strokeDashoffset = 213.6;
+            setTimeout(() => {
+                ring.style.strokeDashoffset = 213.6 - (score / 10) * 213.6;
+            }, 80);
+
+            const { calories, fat, sugar, sodium, protein, fiber } = product.nutrients;
+            const nutrients = [
+                { label: 'Calories', value: calories, unit: 'kcal' },
+                { label: 'Fat', value: fat, unit: 'g' },
+                { label: 'Sugar', value: sugar, unit: 'g' },
+                { label: 'Sodium', value: sodium, unit: 'mg' },
+                { label: 'Protein', value: protein, unit: 'g' },
+                { label: 'Fiber', value: fiber, unit: 'g' },
+            ];
+
+            document.getElementById('nutrientsGrid').innerHTML = nutrients.map(n => `
+      <div class="nutrient-chip">
+        <div class="nutrient-label">${n.label}</div>
+        <div class="nutrient-value">${n.value}<span class="nutrient-unit">${n.unit}</span></div>
+      </div>
+    `).join('');
+
+            const flags = generateFlags(product);
+            document.getElementById('flagsContainer').innerHTML = flags.map(f =>
+                `<span class="flag flag-${f.type}">${f.label}</span>`
+            ).join('');
+
+            card.style.display = 'block';
+            setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+        }
+
+        /* ── Analyze ── */
+        async function analyzeManual() {
+            const code = document.getElementById('barcodeInput').value.trim();
+            if (!code) { showToast('Please enter a barcode number'); return; }
+            await runAnalysis(code);
+        }
+
+        async function runAnalysis(code) {
+            showLoading(true);
+            await delay(700);
+
+            const local = PRODUCT_DB[code];
+            if (local) {
+                renderResult(code, local);
+                showLoading(false);
+                return;
+            }
+
+            // Try Open Food Facts
+            try {
+                const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+                const data = await res.json();
+
+                if (data.status === 1 && data.product) {
+                    const p = data.product;
+                    const n = p.nutriments || {};
+                    const synth = {
+                        name: p.product_name || p.generic_name || 'Unknown Product',
+                        nutrients: {
+                            calories: Math.round(n['energy-kcal_100g'] || (n['energy_100g'] || 0) / 4.184),
+                            fat: Math.round((n['fat_100g'] || 0) * 10) / 10,
+                            sugar: Math.round((n['sugars_100g'] || 0) * 10) / 10,
+                            sodium: Math.round((n['sodium_100g'] || 0) * 1000),
+                            protein: Math.round((n['proteins_100g'] || 0) * 10) / 10,
+                            fiber: Math.round((n['fiber_100g'] || 0) * 10) / 10,
+                        },
+                        additives: (p.additives_tags || []).map(a => a.replace('en:', '').replace(/-/g, ' ')),
+                        organic: (p.labels_tags || []).includes('en:organic'),
+                        vegan: (p.labels_tags || []).includes('en:vegan'),
+                        gluten_free: (p.labels_tags || []).includes('en:gluten-free'),
+                    };
+                    renderResult(code, synth);
+                } else {
+                    showToast('Product not found. Try a demo barcode below.');
+                    document.getElementById('resultCard').style.display = 'none';
+                }
+            } catch (e) {
+                showToast('Network error fetching product. Try a demo barcode.');
+            }
+            showLoading(false);
+        }
+
+        /* ── Camera ── */
+        let codeReader = null;
+
+        async function startCamera() {
+            if (typeof ZXing === 'undefined') {
+                showToast('Barcode library unavailable. Use manual input.');
+                return;
+            }
+
+            try {
+                const hints = new Map();
+                hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+                    ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+                    ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
+                    ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.QR_CODE,
+                ]);
+
+                codeReader = new ZXing.BrowserMultiFormatReader(hints);
+                const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+                if (!devices || !devices.length) { showToast('No camera found.'); return; }
+
+                const deviceId = devices[devices.length - 1].deviceId;
+                document.getElementById('startCameraBtn').disabled = true;
+                document.getElementById('stopCameraBtn').disabled = false;
+                document.getElementById('cameraWrapper').classList.add('active');
+
+                codeReader.decodeFromVideoDevice(deviceId, 'video', (result, err) => {
+                    if (result) {
+                        const code = result.getText();
+                        document.getElementById('barcodeInput').value = code;
+                        stopCamera();
+                        runAnalysis(code);
+                    }
+                });
+            } catch (e) {
+                showToast('Camera access denied or unavailable.');
+            }
+        }
+
+        function stopCamera() {
+            if (codeReader) { codeReader.reset(); codeReader = null; }
+            document.getElementById('startCameraBtn').disabled = false;
+            document.getElementById('stopCameraBtn').disabled = true;
+            document.getElementById('cameraWrapper').classList.remove('active');
+        }
+
+        /* ── Helpers ── */
+        function showLoading(on) {
+            document.getElementById('loadingOverlay').classList.toggle('active', on);
+        }
+
+        function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+        let toastTimer;
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+        }
+
+        document.getElementById('barcodeInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') analyzeManual();
+        });
+    </script>
+</body>
+
+</html>
